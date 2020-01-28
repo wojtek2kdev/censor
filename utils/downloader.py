@@ -1,9 +1,11 @@
 from tkinter import *
 from tkinter import filedialog
+from youtube_dl import YoutubeDL
+from threading import Thread
+from tqdm import *
 
 import pandas as pd
-
-from youtube_dl import YoutubeDL
+import numpy as np
 
 class Downloader:
 
@@ -43,13 +45,8 @@ class Downloader:
             sources.append(data)
         return sources
 
-    def downloadTracks(self):
-        sources = self.loadSources()
-        directory = self.getDirectory()
-
-        downloaded = 0
-
-        for source in sources:       
+    def downloadTracks(self, sources_part, directory, progress):
+        for source in sources_part:       
             ydl_opts = {
                 'format': 'bestaudio[ext={}]'.format(self._extension),
                 'outtmpl': directory + '/%(id)s.%(ext)s',
@@ -64,8 +61,24 @@ class Downloader:
             }
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.download([source['link']])
-                downloaded += 1
-                print("[{}/{}] Tracks downloaded".format(downloaded, len(sources))) 
+                progress.update(1)
 
-d = Downloader(checkpoint=False)
-d.downloadTracks()
+    def run(self, thread_count=5):
+        sources = self.loadSources()
+        directory = self.getDirectory()
+
+        bar = tqdm(total=len(sources), desc="Download")
+
+        sources = filter(
+            lambda source_list: source_list.any(),
+            np.array_split(sources, thread_count)
+        )
+
+        thread_number = 1
+        for sources_part in sources:
+            thread = Thread(
+                target=self.downloadTracks, 
+                args=(sources_part, directory, bar)
+            )
+            thread_number += 1
+            thread.start()
