@@ -3,6 +3,7 @@ from tkinter import filedialog
 from youtube_dl import YoutubeDL
 from threading import Thread
 from tqdm import *
+from time import time
 
 import pandas as pd
 import numpy as np
@@ -49,7 +50,7 @@ class Downloader:
         for source in sources_part:       
             ydl_opts = {
                 'format': 'bestaudio[ext={}]'.format(self._extension),
-                'outtmpl': directory + '/%(id)s.%(ext)s',
+                'outtmpl': directory + '/%(id)s-{}.%(ext)s'.format(round(time()*1000)),
                 'prefer_ffmpeg': True,
                 'quiet': True,
                 'postprocessor_args': [
@@ -82,3 +83,6 @@ class Downloader:
             )
             thread_number += 1
             thread.start()
+
+d = Downloader(checkpoint=False)
+d.run()
