@@ -11,7 +11,7 @@ import numpy as np
 class Downloader:
 
     def __init__(self, **kwargs):
-        self._start_from_checkpoint = kwargs.get('checkpoint', True)
+        self._ignore_downloaded = kwargs.get('ignore_downloaded', True)
         self._extension = kwargs.get('extension', 'm4a')
 
     def getFilename(self):
@@ -30,11 +30,21 @@ class Downloader:
         )
         return directory
 
+    def convertTimestamp(self, timestamp):
+        seconds, miliseconds = str(timestamp).split('/')
+        seconds = int(seconds)
+        hour = seconds//3600
+        minute = (seconds-3600*hour)//60
+        second = seconds-3600*hour-60*minute
+        newTimestamp = [*map(lambda t: str(t).zfill(2), [hour, minute, second, miliseconds])]
+        return "{}:{}:{}.{}".format(*newTimestamp) 
+
+
     def loadSources(self):
         filename = self.getFilename()
         csv = pd.read_csv(filename, sep=';')
-        if self._start_from_checkpoint:
-            csv = csv[csv['id'] > csv[csv['checkpoint']==1]['id'][1]]
+        if self._ignore_downloaded:
+            csv = csv[csv['downloaded'] != 1]
         sources = []
         for index, row in csv.iterrows():
             data = {
@@ -47,17 +57,17 @@ class Downloader:
         return sources
 
     def downloadTracks(self, sources_part, directory, progress):
-        for source in sources_part:       
+        for source in sources_part:     
             ydl_opts = {
                 'format': 'bestaudio[ext={}]'.format(self._extension),
-                'outtmpl': directory + '/%(id)s-{}.%(ext)s'.format(round(time()*1000)),
+                'outtmpl': directory + '/{}-%(id)s-{}.%(ext)s'.format(source['id'], round(time()*1000)),
                 'prefer_ffmpeg': True,
                 'quiet': True,
                 'postprocessor_args': [
                     '-ss', 
-                    source['start'],
+                    self.convertTimestamp(source['start']),
                     '-to',
-                    source['stop']
+                    self.convertTimestamp(source['stop'])
                 ]
             }
             with YoutubeDL(ydl_opts) as ydl:
@@ -84,5 +94,5 @@ class Downloader:
             thread_number += 1
             thread.start()
 
-d = Downloader(checkpoint=False)
+d = Downloader(ignore_downloaded=True)
 d.run()
