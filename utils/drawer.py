@@ -3,6 +3,13 @@ import pydub as pdb
 import librosa
 import argparse, sys, os
 
+def clear_dir(directory):
+    for root, dirs, files in os.walk(directory):
+            for file in files:
+                os.remove(os.path.join(root, file))
+
+def convert_to_wav(track):
+    pass
 
 def main(args):
     source_dir = args.dir
@@ -10,9 +17,9 @@ def main(args):
     clear_destination = args.clear
     
     if clear_destination:
-        for root, dirs, files in os.walk(destination):
-            for file in files:
-                os.remove(os.path.join(root, file))
+        clear_dir(destination)
+
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
