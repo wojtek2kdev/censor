@@ -1,5 +1,5 @@
 from pydub import AudioSegment as audio
-from random import randrange, sample
+from random import randrange, sample, shuffle
 from functools import reduce
 
 class Embedding:
@@ -14,7 +14,16 @@ class Embedding:
         
         self.background_dBFS = -50
 
-    
+    def loadRandomClips(self, clips, samples_range, label):
+        amount = randrange(*samples_range)
+        to_load = sample(clips, amount)
+        loaded = []
+        for path in to_load:
+            _, ext = path.split('.')
+            clip = audio.from_file(path, ext)
+            loaded.append((clip, label))
+        return loaded
+
     
     def loadRandomBackground(self, size):
         path, = sample(self.backgrounds, 1)
