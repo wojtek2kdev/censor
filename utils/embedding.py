@@ -2,6 +2,7 @@ from pydub import AudioSegment as audio
 from random import randrange, sample, shuffle
 from math import ceil
 from functools import reduce
+from itertools import repeat, zip_longest
 
 class Embedding:
     def __init__(self, positives, negatives, backgrounds, destination):
@@ -13,8 +14,6 @@ class Embedding:
         self.negatives_range = (1,4)
         self.positives_range = (1,3)
         self.margin_range = (100, 1000)
-        
-        self.background_dBFS = -50
 
     def randomChunks(self, array, chunk_range):
         array_copy = array.copy()
@@ -38,16 +37,12 @@ class Embedding:
         backgrounds_amount = len(self.backgrounds)
         silent_probability = 0.15
         zeros_amount = ceil(backgrounds_amount*silent_probability)
-        zeros = [0 for _ in range(zeros_amount)]
+        zeros = list(repeat(0, zeros_amount))
         path, = sample([*zeros, *self.backgrounds], 1)
         if path:
             _, ext = path.split('.')
             begin = randrange(0, size)
-            
             background = audio.from_file(path, ext)
-        
-            dBFS_change = background.dBFS - self.background_dBFS
-            background = background.apply_gain(dBFS_change)
             background = background[begin:begin+size]
         else:
             background = audio.silent(duration=size)
@@ -71,14 +66,13 @@ class Embedding:
             return (recording, timestamps)
         return reducer
 
-    def connectTracks(self, *loaded):
-        loaded_list = [el for sublist in loaded for el in sublist]
-        shuffle(loaded_list)
+    def connectTracks(self, chunk):
+        shuffle(chunk)
 
         initial = [audio.empty(), []]
         connected = reduce(
             self.joinTracksWithRandomMargins(self.margin_range),
-            loaded_list,
+            chunk,
             initial
         )
         return connected
@@ -90,10 +84,31 @@ class Embedding:
         result_audio = background.overlay(recording)
         return result_audio
 
-    def saveAllToWav(self, recordings):
-        for i, recording in enumerate(recordings):
-            new_filename = f'{self.destination}/track-{i}.wav'
-            recording = recording.set_frame_rate(44100)
-            recording = recording.set_sample_width(2)
-            recording.export(new_filename, format='wav')
+    def saveToWav(self, recording, filename):
+        new_path = f'{self.destination}/{filename}.wav'
+        recording = recording.set_frame_rate(44100)
+        recording = recording.set_sample_width(2)
+        recording.export(new_path, format='wav')
+        return new_path
 
+    def process(self):
+        positive_tracks = self.loadTracks(self.positives, 1)
+        negative_tracks = self.loadTracks(self.negatives, 0)
+
+        positive_chunks = self.randomChunks(positive_tracks, self.positives_range)
+        negative_chunks = self.randomChunks(negative_tracks, self.negatives_range)
+
+        merged_chunks = [[*n, *p] for n, p in zip_longest(positive_chunks, negative_chunks, fillvalue=[])]
+
+        processed = []
+
+        for i, chunk in enumerate(merged_chunks):
+            track, timestamps = self.connectTracks(chunk)
+            background = self.loadRandomBackground(len(track))
+            
+            track_on_background = self.putOnBackground(background, track)
+            new_path = self.saveToWav(track_on_background, f'track-{i}')
+            
+            processed.append((new_path, timestamps))
+
+        return processed
