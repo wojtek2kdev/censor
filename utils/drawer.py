@@ -5,49 +5,51 @@ import argparse, sys, os
 
 from tqdm import tqdm
 from pathlib import Path
+from math import ceil, floor
 
-def main(args):
-    source_dir = Path(args.dir).resolve()
-    destination = Path(args.dest).resolve()
-    clear_destination = args.clear
-    
-    def clear_dir(directory):
-        for root, dirs, files in os.walk(directory):
-                for file in files:
-                    os.remove(os.path.join(root, file))
+class Drawer:
+    def __init__(self, tracks_info, destination=os.getcwd(), out='data.npy'):
+        self.hop_length = 512
+        self.result = None
+        
+        self.tracks_info = tracks_info
+        self.destination = f'{destination}/{out}'
 
-    def convert_to_wav(filename):
-        name, ext = filename.split('.')
-        audio = pdb.AudioSegment.from_file(f'{source_dir}/{filename}', ext)
-        audio = audio.set_frame_rate(44100)
-        audio = audio.set_sample_width(2)
-        new_path = f'{destination}/{name}.wav'
-        audio.export(new_path, format='wav')
-        return new_path
-
-    def generate_spectrogram(filename):
-        path, _ = filename.split('.')
-        time_series, sample_rate = librosa.load(filename)
-        spectrogram = librosa.feature.melspectrogram(y=time_series, sr=sample_rate)
+    def generateSpectrogram(self, time_series, sample_rate):
+        spectrogram = librosa.feature.melspectrogram(y=time_series, sr=sample_rate, hop_length=self.hop_length)
         reshaped_spectrogram = spectrogram.T #Want to timesteps first
-        np.save(f'{path}.npy', reshaped_spectrogram)
+        return reshaped_spectrogram
 
-    if clear_destination:
-        clear_dir(destination)
+    def timestampScale(self, timestamp, time_series, sample_rate, mel_timesteps_amount):
+        duration_ms = floor(librosa.get_duration(y=time_series, sr=sample_rate)*1000)
+        begin, end = timestamp
+        scaled_begin = floor((begin/duration_ms)*mel_timesteps_amount)
+        scaled_end = min(mel_timesteps_amount, ceil((end/duration_ms)*mel_timesteps_amount))
+        return (scaled_begin, scaled_end)
 
-    tracks = os.listdir(source_dir)
-    progress = tqdm(total=len(tracks), desc='Spectrograms generating')
-    for i, track in enumerate(tracks):
-        new_path = convert_to_wav(track)
-        generate_spectrogram(new_path)
-        progress.update(1)
+    def generateDesiredOutput(self, mel_timesteps_amount, timestamps):
+        output = np.zeros(mel_timesteps_amount)
+        for timestamp in timestamps:
+            begin, end = timestamp
+            output[begin:end] = 1
+        return output
+            
+    def save(self):
+        print('Saving..')
+        np.save(self.destination, self.result)
+    
+    def process(self):
+        data = []
+        progress = tqdm(total=len(self.tracks_info), desc='Spectrograms generating')
+        for path, timestamps in self.tracks_info:
+            time_series, sample_rate = librosa.load(path)
 
+            melspectrogram = self.generateSpectrogram(time_series, sample_rate)
+            mel_timesteps_amount, _ = melspectrogram.shape
+            scaled_timestamps = [self.timestampScale(timestamp, time_series, sample_rate, mel_timesteps_amount) for timestamp in timestamps]
+            
+            desired_output = self.generateDesiredOutput(mel_timesteps_amount, scaled_timestamps)
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dir', help='Specify audio files localization.')
-    parser.add_argument('--dest', help='Specify spectrograms destination dir.')
-    parser.add_argument('--clear', action='store_true', help="Clear destination dir.")
-    args = parser.parse_args()
-    main(args)
+            data.append([melspectrogram, desired_output])
+            progress.update(1)
+        self.result = np.array(data).T
